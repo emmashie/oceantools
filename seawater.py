@@ -1,5 +1,7 @@
 import numpy as np
-
+""" calculate density from temp and salt,
+    buoyancy frequency (code from powellb/seapy)
+"""
 
 def _dens0(S, T):
     """Density of seawater at zero pressure"""
@@ -38,6 +40,64 @@ def _dens0(S, T):
     return SMOW + RB * S + RC * (S**1.5) + d0 * S * S
 
 
+def _seck(S, T, P=0):
+    """Secant bulk modulus"""
+
+    S = np.asarray(S)
+    T = np.asarray(T)
+    P = np.asarray(P)
+
+    # --- Pure water terms ---
+
+    h0 = 3.239908
+    h1 = 1.43713E-3
+    h2 = 1.16092E-4
+    h3 = -5.77905E-7
+    AW = h0 + (h1 + (h2 + h3 * T) * T) * T
+
+    k0 = 8.50935E-5
+    k1 = -6.12293E-6
+    k2 = 5.2787E-8
+    BW = k0 + (k1 + k2 * T) * T
+
+    e0 = 19652.21
+    e1 = 148.4206
+    e2 = -2.327105
+    e3 = 1.360477E-2
+    e4 = -5.155288E-5
+    KW = e0 + (e1 + (e2 + (e3 + e4 * T) * T) * T) * T
+
+    # --- seawater, P = 0 ---
+
+    SR = S**0.5
+
+    i0 = 2.2838E-3
+    i1 = -1.0981E-5
+    i2 = -1.6078E-6
+    j0 = 1.91075E-4
+    A = AW + (i0 + (i1 + i2 * T) * T + j0 * SR) * S
+
+    f0 = 54.6746
+    f1 = -0.603459
+    f2 = 1.09987E-2
+    f3 = -6.1670E-5
+    g0 = 7.944E-2
+    g1 = 1.6483E-2
+    g2 = -5.3009E-4
+    K0 = KW + (f0 + (f1 + (f2 + f3 * T) * T) * T
+               + (g0 + (g1 + g2 * T) * T) * SR) * S
+
+    # --- General expression ---
+
+    m0 = -9.9348E-7
+    m1 = 2.0816E-8
+    m2 = 9.1697E-10
+    B = BW + (m0 + (m1 + m2 * T) * T) * S
+
+    K = K0 + (A + B * P) * P
+
+    return K
+
 
 def dens(S, T, P=0):
     """Compute density of seawater from salinity, temperature, and pressure
@@ -58,3 +118,18 @@ def dens(S, T, P=0):
 
     P = 0.1 * P  # Convert to bar
     return _dens0(S, T) / (1 - P / _seck(S, T, P))
+
+
+def buoyancy(rho, z, tind, zind):
+    """ calculates brunt-vaisala frequency
+        rho - density (dim tind by zind)
+        z - depths [m] negative  (dim tind by zind)
+    """
+    n2 = np.zeros((tind,zind-1))
+    g = 9.8
+    rho0 = np.mean(rho,axis=-1)
+    for i in range(zind-1):
+        drho = rho[:,i+1] - rho[:,i]
+        dz = z[:,i+1] - z[:,i]
+        n2[:,i] = - g / rho0 * (drho / dz)
+    return n2
